@@ -1,0 +1,83 @@
+#!/usr/bin/env python
+'''
+time: 2023-04-05
+author: pxxiao
+version: 1.0
+description: 用于日常的 FASTA 文件处理,其他功能待定
+'''
+
+import argparse
+import os
+
+from fasta_fun import *
+from gff_fun import *
+from util import *
+import textwrap
+
+def main():# 定义命令行参数和选项
+    parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter,
+                                     description='pxx 的分析小工具')
+    subparsers = parser.add_subparsers(dest='function', metavar='')
+
+    # 定义 func-one 命令的子命令和选项: fasta
+    func_one_parser = subparsers.add_parser('fasta', formatter_class=argparse.RawTextHelpFormatter,
+                                            help='处理 FASTA 文件')
+    func_one_parser.add_argument('-s', '--split', dest='split', required=True, choices=['length', 'number'], metavar='',
+                                 help='拆分 FASTA 文件,1按照bp拆分,2按照number拆分')
+    func_one_parser.add_argument('-i', '--input', type=str, required=True,
+                                 help='待拆分的 FASTA 文件')
+    func_one_parser.add_argument('-l', '--length', type=int, default=20000000, required=False,
+                                 help='拆分成多少bp的小文件,默认为20,000,000')
+    func_one_parser.add_argument('-n', '--number', type=int, default=50, required=False,
+                                 help='拆分成多个文件,每个文件包含number个序列,默认为50')
+
+    # 定义 func-two 命令的子命令和选项: stat
+    func_stat_parser = subparsers.add_parser('stat', formatter_class=argparse.RawTextHelpFormatter,
+                                             help='统计基因组的相关信息')
+    func_stat_parser.add_argument('-i', '--input', type=str, required=True,
+                                  help='输入文件,待处理的 FASTA 文件')
+    func_stat_parser.add_argument('-n', '--n50', type=str, required=False,
+                                  help='基因组组装结果的统计')
+
+    # 定义 fun-three 命令的子命令和选项: gff
+    func_gff_parser = subparsers.add_parser('gff', formatter_class=argparse.RawTextHelpFormatter,
+                                            help='Perform operations on GFF file')
+    func_gff_parser.add_argument('-i', '--input', type=str, required=True,
+                                  help='file input: GFF file')
+    func_gff_parser.add_argument('-m', '--model', type=str, required=True, choices=['sort', 'extract'],
+                                  help= 'GFF sub command, including sort, extract\n'
+                                        'sort: based on chr and start \n'
+                                        'extract: extract exon, intron information, output format: bed\n')
+    func_gff_parser.add_argument('-s', '--split', type=str, required=False, default="ID=",
+                                 help = 'the 9th column of gff file, maybe startswith "ID=", or "Parent=')
+
+    # 解析命令行参数
+    args = parser.parse_args()
+
+    # 根据所选的命令行选项调用相应的功能和子功能
+    if args.function == 'fasta':
+        model = args.split
+        inputfile = args.input
+        length = args.length
+        number = args.number
+        func_split(model, inputfile, length, number)
+
+    elif args.function == "stat":
+        file_input = args.input
+        fun_1 = args.n50
+        func_stat(file_input, fun_1)
+
+    elif args.function == "gff":
+        input_gff = args.input
+        model = args.model
+        splits = args.split
+        # 如果不是gff或则gff3后缀,直接报错
+        if not args.input.endswith('.gff') or args.input.endswith('.gff3'):
+            raise ValueError('Error: Input file must have a .gff or .gff3 extension.')
+        if model == "sort":
+            None
+        elif model == "extract":
+            func_get_ExonIntronInfo(input_gff, model, splits)
+
+if __name__ =="__main__":
+    main()
