@@ -94,3 +94,27 @@ def func_reads_deduplication_based_ID(file_input):
             else:
                 continue
     return None
+
+
+def func_reads_extract_based_ID(file_input, read_ID):
+    '''
+    根据reads ID，提取相应的fastq文件
+    :param file_input: fastq.gz, 压缩文件
+    :return: 输出提取的reads序列，还是fastq格式
+    '''
+    name = os.path.basename(file_input)
+    if 'fq.gz' in name:
+        file_output_name = name.replace('fq.gz', '')
+    elif 'fastq.gz' in name:
+        file_output_name = name.replace('fastq.gz', '')
+    out = file_output_name + 'extract.fastq.gz'
+    # 处理
+    with gzip.open(file_input, "rt") as handle, gzip.open(out, "wt") as output:
+        for record in SeqIO.parse(handle, "fastq"):
+            ID = record.id  # reads ID
+            if ID == read_ID:
+                SeqIO.write(record, output, "fastq")
+                break
+            else:
+                continue
+    return None

@@ -105,10 +105,13 @@ def main():# 定义命令行参数和选项
     func_stat_parser.add_argument('-i', '--input', type=str, required=True,
                                   help = 'The input FASTQ file, can be in .fastq or .fastq.gz format')
     func_stat_parser.add_argument('-m', '--model', type=str, required=True,
-                                  choices=['phreads', 'deduplication'], metavar='',
+                                  choices=['phreads', 'deduplication', 'extract'], metavar='',
                                   help = 'read sub command, including phreads\n'
                                          'phreads: Parse the quality value of reads\n'
-                                         'deduplication: remove reads based on reads ID, if reads ID not uniq')
+                                         'deduplication: remove reads based on reads ID, if reads ID not uniq\n'
+                                         'extract: Extract reads sequences')
+    func_stat_parser.add_argument('-k', '--readid', type=str, required=False, metavar='',
+                                  help = 'Extract reads sequence based the reads ID')
 
 
     # 解析命令行参数
@@ -184,6 +187,7 @@ def main():# 定义命令行参数和选项
     elif args.function == "read":
         input = args.input
         model = args.model
+        readsID = args.readid
         print("Input FASTQ reads: ", input)
         print("model: ", model)
         if model == "phreads":
@@ -192,6 +196,9 @@ def main():# 定义命令行参数和选项
         elif model == "deduplication":
             print("Deduplication based on reads ID, if reads ID not uniq")
             func_reads_deduplication_based_ID(input)
+        elif model == 'extract':
+            print('Extract reads based on read ID')
+            func_reads_extract_based_ID(input, readsID)
 
 
 if __name__ =="__main__":
