@@ -14,6 +14,8 @@ from gff_fun import *
 from gap_fun import *
 from util import *
 from reads_fun import *
+from telomere_fun import *
+from genome_fun import *
 import textwrap
 
 def main():# 定义命令行参数和选项
@@ -30,7 +32,8 @@ def main():# 定义命令行参数和选项
                                  help='file input: .fasta or .fa')
     func_one_parser.add_argument('-m', '--model', dest='model',
                                  choices=['length', 'number', 'extractk', 'extractl', 'extractc', 'falen',
-                                          'IDsimp', 'compare', 'toPhy', 'count'], metavar='',
+                                          'IDsimp', 'compare', 'toPhy', 'count', 'changeid', 'reverseq',
+                                          'karyotype'], metavar='',
                                  help='Process on .fasta or .fa \n'
                                       'length: Split File Based on Length \n'
                                       'number: Split File Based on Number \n'
@@ -46,8 +49,10 @@ def main():# 定义命令行参数和选项
                                       '\t -s required \n'
                                       'compare: Compare the contents of two FASTA files for equality \n'
                                       'toPhy: Convert FASTA format to phy format \n'
-                                      'count: Count the number of strings')
-
+                                      'count: Count the number of strings \n'
+                                      'changeid: change fasta id based id list, -c required \n'
+                                      'reverseq: reverse some chr seq based id list, -c required \n'
+                                      'karyotype: Karyotype information, such as: chr01\t1\tlength')
     func_one_parser.add_argument('-l', '--length', type=int, default=20000000, required=False,
                                  help='拆分成多少bp的小文件 or 根据序列的长度从基因组文件提取序列 [20000000]')
     func_one_parser.add_argument('-n', '--number', type=int, default=50, required=False,
@@ -58,11 +63,13 @@ def main():# 定义命令行参数和选项
     func_one_parser.add_argument('-g', '--greedy', type=str, required=False,
                                  help='Greedy match or not, True or False')
     func_one_parser.add_argument('-s', '--separator', type=str, required=False,
-                                 help='Separator of sequence ID; "None" == "\TAB"')
+                                 help='Separator of sequence ID; "None" == "TAB"')
     func_one_parser.add_argument('-x', '--newFASTA', type=str, required=False,
                                  help='File 2 of two FASTA files for compare')
     func_one_parser.add_argument('-p', '--toPhy', type=str, required=False,
                                  help='FASTA file to Phy')
+    func_one_parser.add_argument('-c', '--chrlist', type=str, required=False,
+                                 help='File chr list, first col is oldID, second col is newID, TAB separated')
 
 
     # 定义 func-two 命令的子命令和选项: stat
@@ -105,14 +112,47 @@ def main():# 定义命令行参数和选项
     func_stat_parser.add_argument('-i', '--input', type=str, required=True,
                                   help = 'The input FASTQ file, can be in .fastq or .fastq.gz format')
     func_stat_parser.add_argument('-m', '--model', type=str, required=True,
-                                  choices=['phreads', 'deduplication', 'extract'], metavar='',
+                                  choices=['phreads', 'deduplication', 'extract', 'IDsimp', 'filterONT', 'stat'], metavar='',
                                   help = 'read sub command, including phreads\n'
                                          'phreads: Parse the quality value of reads\n'
                                          'deduplication: remove reads based on reads ID, if reads ID not uniq\n'
-                                         'extract: Extract reads sequences')
+                                         'extract: Extract reads sequences; extensions: fq.gz or fastq.gz\n'
+                                         'IDsimp: ID simplified\n'
+                                         'filterONT: Filter ONT reads based on quality or length [l 100000] [q 7]\n'
+                                         'stat: the results of seqkit stat')
     func_stat_parser.add_argument('-k', '--readid', type=str, required=False, metavar='',
                                   help = 'Extract reads sequence based the reads ID')
+    func_stat_parser.add_argument('-q', '--ONTquality', type=int, required=False, metavar='',
+                                  help = 'Filter ONT reads based quality, e.g., 7')
+    func_stat_parser.add_argument('-l', '--ONTlength', type=int, required=False, metavar='',
+                                  help = 'Filter ONT reads based length, e.g., 100000')
 
+    # 定义 fun-six 命令的子命令和选项: telomere
+    func_stat_parser = subparsers.add_parser('telomere', formatter_class=argparse.RawTextHelpFormatter,
+                                             help = 'Telomere information')
+    func_stat_parser.add_argument('-i', '--input', type=str, required=True,
+                                  help = 'FASTA file')
+    func_stat_parser.add_argument('-l', '--length', type=int, required=False, default=150000,
+                                  help = 'Length of both end chromosome [150000]')
+    func_stat_parser.add_argument('-m', '--minrptnum', type=int, required=False, default=100,
+                                  help = 'Minimum repeat number of each telomere [100]')
+    func_stat_parser.add_argument('-o', '--output', type=str, required=True,
+                                  help = 'output')
+
+    # 定义 fun-seven 命令的子命令和选项: genome
+    func_genome_parser = subparsers.add_parser('genome', formatter_class=argparse.RawTextHelpFormatter,
+                                             help = 'Genome operation')
+    func_genome_parser.add_argument('-m', '--model', type=str, required=True, choices=['survey', 'telomere'],
+                                    help = 'genome sub command, including: \n'
+                                           '\tsurvey: genome survey based on Illumina reads, -p required \n'
+                                           '\ttelomere: genome telomere identified, [-i/--input_genome] required')
+    func_genome_parser.add_argument('-k', '--kmersize', type=int, required=False, default=21, help='kmer size [21]')
+    func_genome_parser.add_argument('-c', '--count', type=int, required=False, default=10000000, help='High count value of histogram [10000000]')
+    func_genome_parser.add_argument('-b', '--poly', type=int, required=False, default=2, help = 'poly [2]')
+    func_genome_parser.add_argument('-t', '--threads', type=int, required=False, default=16, help = 'threads [16]')
+    func_genome_parser.add_argument('-p', '--path', type=str, required=False, help='path of fastq reads, decompress format ')
+    func_genome_parser.add_argument('-l', '--length', type=int, required=False, default=150, help = 'reads length [150] \n')
+    func_genome_parser.add_argument('-i', '--inputGenome', help = 'The genome fasta file')
 
     # 解析命令行参数
     args = parser.parse_args()
@@ -127,6 +167,7 @@ def main():# 定义命令行参数和选项
         separator = args.separator
         newFASTA = args.newFASTA
         greedy = args.greedy
+        file_chr_list = args.chrlist
         if model == 'length':
             split_fasta_based_bp(inputfile, length)
         elif model == 'number':
@@ -147,6 +188,12 @@ def main():# 定义命令行参数和选项
             func_fasta_toPhy(inputfile)
         elif model == "count":
             func_fasta_count(inputfile, keywords)
+        elif model == 'changeid':
+            genome_change_chr_name(inputfile, file_chr_list)
+        elif model == 'reverseq':
+            genome_reverse_some_chr(inputfile, file_chr_list)
+        elif model == 'karyotype':
+            genome_karyotype(inputfile)
         else:
             print("Invalid model choice. \nPlease set \"model\" parameter!")
 
@@ -188,6 +235,8 @@ def main():# 定义命令行参数和选项
         input = args.input
         model = args.model
         readsID = args.readid
+        ONT_quality = args.ONTquality
+        ONT_length = args.ONTlength
         print("Input FASTQ reads: ", input)
         print("model: ", model)
         if model == "phreads":
@@ -199,6 +248,37 @@ def main():# 定义命令行参数和选项
         elif model == 'extract':
             print('Extract reads based on read ID')
             func_reads_extract_based_ID(input, readsID)
+        elif model == "IDsimp":
+            print('Simplified reads ID')
+            func_reads_ID_simplified(input)
+        elif model == "filterONT":
+            print('Filter ONT reads')
+            func_reads_filter_ONT_reads(input, ONT_quality, ONT_length)
+        elif model == "stat":
+            print('Statistical reads based on seqkit stat')
+            func_reads_stat_from_seqkit_stat(input)
+
+
+    elif args.function == "telomere":
+        input = args.input
+        length = args.length
+        minrptnum = args.minrptnum
+        output = args.output
+        func_telomere_info(input, length, minrptnum, output)
+
+    elif args.function == 'genome':
+        model = args.model
+        kmersize = args.kmersize
+        length = args.length
+        count = args.count
+        threads = args.threads
+        path = args.path
+        genome_poly = args.poly
+        genome_fasta = args.inputGenome
+        if model == 'survey':
+            genome_survey(kmersize, length, count, threads, path, genome_poly)
+        elif model == 'telomere':
+            genome_telomere(genome_fasta)
 
 
 if __name__ =="__main__":

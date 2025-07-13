@@ -5,9 +5,18 @@ author: pxxiao
 version: 1.0
 description: 函数文件
 '''
-import readline, os, re
+import readline, os, re, subprocess
 from Bio import SeqIO
 from collections import defaultdict
+
+
+### 判断文件是否存在
+def check_file_in_path(file, cmd):
+    if os.path.exists(file):
+        print(f'[info] {file} exists, CMD: {cmd}; PASS!')
+    else:
+        subprocess.run(cmd, shell=True)
+    return None
 
 
 def fasta_read(file_input):
@@ -44,12 +53,12 @@ def split_fasta_based_bp(file_input, length):
             if i + length < len(values):
                 # 没到末尾
                 out_split = open("{}_{}.fa".format(key.replace(">",""), str(m)), "w")
-                out_split.write(key + "_" + str(m) + "\n" + values[i:i + length] + "\n")
+                out_split.write(">" + key + "_" + str(m) + "\n" + values[i:i + length] + "\n")
                 m += 1
             else:
                 # 到末尾
                 out_split = open("{}_{}.fa".format(key.replace(">", ""), str(m)), "w")
-                out_split.write(key + "_" + str(m) + "\n" + values[i:] + "\n")
+                out_split.write(">" + key + "_" + str(m) + "\n" + values[i:] + "\n")
                 s += 1
     print("染色体拆分完成！")
     return None
@@ -68,7 +77,7 @@ def split_fasta_based_number(file_input, number):
     for key, values in d_fa.items():
         out = "out_" + str(s)
         out = open(out, "a+")
-        out.write(key + "\n" + values + "\n")
+        out.write('>' + key + "\n" + values + "\n")
         out.close()
         n += 1
         if n <= number:
@@ -112,6 +121,9 @@ def func_n50(file_input):
     ValueSum, N50 = 0, 0
     no_c, no_g, no_a, no_t, no_n = 0, 0, 0, 0, 0
     no_ctg_10k, no_ctg_50k, no_ctg_100k = 0, 0, 0
+    len_ctg_10k, len_ctg_50k, len_ctg_100k = 0, 0, 0
+    no_ctg_lt_100k = 0
+    len_ctg_lt_100k = 0
 
     for record in SeqIO.parse(open(file_input), "fasta"):
         BaseSum += len(record.seq)
@@ -125,10 +137,16 @@ def func_n50(file_input):
 
         if len(record.seq) > 10000:
             no_ctg_10k += 1
+            len_ctg_10k += len(record.seq)
         if len(record.seq) > 50000:
             no_ctg_50k += 1
+            len_ctg_50k += len(record.seq)
         if len(record.seq) > 100000:
             no_ctg_100k += 1
+            len_ctg_100k += len(record.seq)
+        if len(record.seq) < 100000:
+            no_ctg_lt_100k += 1
+            len_ctg_lt_100k += len(record.seq)
 
     for i in [10, 20, 30, 40, 50, 60, 70, 80, 90]:
         N_length = "N" + str(i)
@@ -147,13 +165,24 @@ def func_n50(file_input):
     out.write('Seq. Min\t' + str(min(Length)) + "\n")
     out.write('Seq. Max\t' + str(max(Length)) + "\n")
     out.write('Seq. Total\t' + str(BaseSum) + "\n")
+    ### contig 长度小于某个值
+    print(f'Length < 100k Number\t{str(no_ctg_lt_100k)}')
+    print(f'Length < 100k Length\t{str(len_ctg_lt_100k)}')
+    out.write(f'Length < 100k Num.\t{str(no_ctg_lt_100k)}\n')
+    out.write(f'Length < 100k Len.\t{str(len_ctg_lt_100k)}\n')
+
     ### contig 长度大于某个值
     # print('Ctg gt 10k:\t' + str(no_ctg_10k))
-    print('Length > 50k\t' + str(no_ctg_50k))
-    print('Length > 100k\t' + str(no_ctg_100k))
+    print('Length > 50k Number\t' + str(no_ctg_50k))
+    print(f'Length > 50k Length\t{str(len_ctg_50k)}')
+    print('Length > 100k Number\t' + str(no_ctg_100k))
+    print(f'Length > 100k Length\t{str(len_ctg_100k)}')
     # out.write('Ctg gt 10k:\t' + str(no_ctg_10k) + '\n')
-    out.write('Length > 50k\t' + str(no_ctg_50k) + '\n')
-    out.write('Length > 100k\t' + str(no_ctg_100k) + '\n')
+    out.write('Length > 50k Num.\t' + str(no_ctg_50k) + '\n')
+    out.write(f'Length > 50k Len.\t{str(len_ctg_50k)}\n')
+    out.write('Length > 100k Num.\t' + str(no_ctg_100k) + '\n')
+    out.write(f'Length > 100k Len.\t{str(len_ctg_100k)}\n')
+
     out.close()
     return None
 
@@ -234,5 +263,17 @@ def dic_sort(d):
     for key, values in d.items():
         l_key.append(key)
         l_values.append(values)
-
     return d_sort
+
+
+def rev_seq(seq):
+    '''
+    序列反向互补
+    :param seq:
+    :return:
+    '''
+    base_trans = {'A': 'T', 'C': 'G', 'T': 'A', 'G': 'C', 'N': 'N', 'a': 't', 'c': 'g', 't': 'a', 'g': 'c', 'n': 'n'}
+    rev_seq = list(reversed(seq))
+    rev_seq_list = [base_trans[k] for k in rev_seq]
+    rev_seq = ''.join(rev_seq_list)
+    return (rev_seq)

@@ -284,3 +284,89 @@ def func_fasta_count(file_input, keywords):
     print(f"\"{keywords}\" 出现的频率为：{frequency} 次。")
     # print(f"出现的索引值为：{indices}")
     return None
+
+
+def genome_change_chr_name(genome_fasta, file_chr_list):
+    '''
+    根据提供的染色体列表，更改染色体名称
+    :param genome_fasta: 将要更改的基因组文件
+    :param file_chr_list: 染色体替换文件：第一列原始 ID  第二列新的 ID
+    :return:
+    '''
+    dic_genome_fasta = fasta_read(genome_fasta)
+    dic_ID = {}
+    out = output_based_FileInput(genome_fasta, '.ID.change.fasta')
+    for lines in open(file_chr_list):
+        line = lines.strip().split()
+        dic_ID[line[0]] = line[1]
+    for key, value in dic_ID.items():
+        out.write('>' + dic_ID[key] + '\n' + dic_genome_fasta[key] + '\n')
+
+    # for key, values in dic_genome_fasta.items():
+    #     if key in dic_ID.keys():
+    #         out.write('>' + key + '\n' + dic_genome_fasta[dic_ID[key]] + '\n')
+    #     else:
+    #         out.write('>' + key + '\n' + dic_genome_fasta[key] + '\n')
+    out.close()
+    return None
+
+
+def genome_reverse_some_chr(genome_fasta, file_chr_list):
+    '''
+    根据提供的染色体列表，反向互补这些染色体的序列
+    :param genome_fasta: genome_fasta
+    :param file_chr_list: 需要反向互补的染色体列表: each row each ID
+    :return:
+    '''
+
+    dic_genome_fasta = fasta_read(genome_fasta)
+    out = output_based_FileInput(genome_fasta, '.rev.genome.fasta')
+    list_rev_ID = []
+    for lines in open(file_chr_list):
+        line = lines.strip().split()
+        list_rev_ID.append(line[0])
+    for key, values in dic_genome_fasta.items():
+        if key not in list_rev_ID:
+            out.write('>' + key + '\n' + dic_genome_fasta[key] + '\n')
+        else:
+            new_seq = rev_seq(dic_genome_fasta[key])
+            out.write('>' + key + '\n' + new_seq + '\n')
+    out.close()
+    return None
+
+
+def genome_karyotype(genome_fasta):
+    '''
+    生成核型文件（karyotype），格式为：染色体    1    长度
+    :param genome_fasta: 输入基因组FASTA文件
+    :return: None（输出文件）
+    '''
+    print(f"正在处理 {genome_fasta}，生成核型文件...")
+    d_fa = fasta_read(genome_fasta)
+    out_karyotype = output_based_FileInput(genome_fasta, ".karyotype.txt")
+
+    for chrom, seq in d_fa.items():
+        length = len(seq)
+        out_karyotype.write(f"{chrom}\t1\t{length}\n")
+
+    out_karyotype.close()
+    print(f"输出完成")
+    return None
+
+
+def fasta_extract_based_length(genome_fasta, length_cutoff):
+    '''
+    根据 Length cutoff 提取相应的序列，长于 cutoff 提取
+    :param genome_fasta:
+    :param length_cutoff:
+    :return:
+    '''
+    dic_genome_fasta = fasta_read(genome_fasta)
+    out = output_based_FileInput(genome_fasta, f'.{length_cutoff}.fa')
+    for key, values in dic_genome_fasta.items():
+        if len(values) > length_cutoff:
+            out.write('>' + key + '\n' + values[0] + '\n')
+        else:
+            continue
+    out.close()
+    return None

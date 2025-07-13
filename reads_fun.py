@@ -118,3 +118,97 @@ def func_reads_extract_based_ID(file_input, read_ID):
             else:
                 continue
     return None
+
+
+def modify_read_id(record):
+    read_id_parts = record.id.split(' ')
+    new_read_id = read_id_parts[0]
+    print(new_read_id)
+
+    # 修改 Read ID
+    record.id = new_read_id
+    # record.id = record.id.split(' ')[0]
+    # print(record)
+    return record
+
+
+def func_reads_ID_simplified(file_input):
+    '''
+    对 fastq reads ID 进行简化
+    :param file_input: reads.fastq.gz
+    :return: reads.simplified.fastq.gz
+    '''
+    name = os.path.basename(file_input)
+    if 'fq.gz' in name:
+        file_output_name = name.replace('fq.gz', '')
+    elif 'fastq.gz' in name:
+        file_output_name = name.replace('fastq.gz', '')
+    out = file_output_name + 'extract.fastq.gz'
+    # 处理
+    records = []
+    with gzip.open(file_input, 'rt') as handle, gzip.open(out, 'wt') as output:
+        for record in SeqIO.parse(handle, "fastq"):
+            print(record)
+            modify_record = modify_read_id(record)
+            records.append(modify_record)
+            # print(modify_record)
+            SeqIO.write(records, output, "fastq")
+    return None
+
+
+def func_reads_filter_ONT_reads(file_input, quality, length):
+    '''
+    对 ONTreads 进行过滤，
+    :param file_input: 待输入的 ONT reads
+    :param quality: 过滤的 reads 质量值，默认为 7
+    :param length: 过滤的长度阈值
+    :return: None
+    '''
+    name = os.path.basename(file_input)
+    if 'fq.gz' in name:
+        file_output_name = name.replace('fq.gz', '')
+    elif 'fastq.gz' in name:
+        file_output_name = name.replace('fastq.gz', '')
+    ### 处理
+    cmd_chopper = f'gunzip -c {file_input} | ~/tools/Anaconda3/envs/chopper/bin/chopper ' \
+                  f'-q {quality} -l {length} | gzip > {file_output_name}q{quality}.l{length}.fastq.gz'
+    subprocess.run(cmd_chopper, shell=True, close_fds=True)
+    return None
+
+
+import os
+import pandas as pd
+
+def func_reads_stat_from_seqkit_stat(file_input):
+    '''
+    对 seqkit stat 结果进行整理，输出数据量和 reads 数量（按样本聚合）
+    :param file_input: seqkit stats 输出文件（如 stat.all），需包含 file, num_seqs, sum_len 等列
+    :return: pandas.DataFrame，包含每个样本的 reads 数和总数据量（Gb）
+    '''
+    # 读取数据
+    df = pd.read_csv(file_input, sep=r"\s+", engine="python")
+
+    # 提取样本名（去掉 _1/_2 和扩展名）
+    df['sample'] = df['file'].str.replace(r'_([12])\.f(ast)?q(\.clean)?\.gz$', '', regex=True)
+
+    # 去掉逗号，并将数值字段转为数字
+    df['num_seqs'] = df['num_seqs'].str.replace(',', '').astype(int)
+    df['sum_len'] = df['sum_len'].str.replace(',', '').astype(int)
+
+    # 每个样本汇总：双端总reads数、总测序量（Gb）
+    summary = df.groupby('sample').agg({
+        'num_seqs': 'sum',
+        'sum_len': 'sum'
+    }).reset_index()
+
+    # 转换为 Gb 并保留两位小数
+    summary['sum_len_Gb'] = (summary['sum_len'] / 1e9).round(2)
+
+    # 格式化输出
+    summary = summary[['sample', 'num_seqs', 'sum_len_Gb']]
+    summary.columns = ['Sample', 'Total_Reads', 'Total_Data(Gb)']
+
+    # 直接输出到终端
+    print(summary)
+
+    return None
