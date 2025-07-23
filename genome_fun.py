@@ -127,3 +127,39 @@ def genome_telomere(genome_fasta):
     subprocess.run(cmd_telomere_identified, shell=True, close_fds=True)
     return None
 
+
+def genome_split_chr_by_gap(genome_fasta, gap_size):
+    '''
+    在 Gap 处切割基因组，获得contig 水平的基因组，Gap 大小默认 100 bp
+    :param genome_fasta: genome FASTA
+    :return:
+    '''
+
+    def split_sequence_by_gap(sequence, gap="N" * 100):
+        """ 根据给定的gap（默认100个N）将序列切割成contig """
+        contigs = sequence.split(gap)
+        return [contig for contig in contigs if len(contig) > 0]  # 去除空contig
+
+    def write_fasta(output_file, contigs, seq_id):
+        """ 将分割后的序列写入新的FASTA文件 """
+        for i, contig in enumerate(contigs, 1):
+            output_file.write(f">{seq_id}_contig{i}\n")
+            for j in range(0, len(contig), 60):
+                output_file.write(contig[j:j + 60] + "\n")  # 每行写60个碱基
+
+    def process_fasta(input_fasta, output_fasta, gap_size=100):
+        """ 处理FASTA文件，将序列按gap切割并输出新的FASTA文件 """
+        sequences = fasta_read(input_fasta)
+        gap = "N" * gap_size
+        with open(output_fasta, "w") as output_file:
+            for seq_id, sequence in sequences.items():
+                contigs = split_sequence_by_gap(sequence, gap)
+                write_fasta(output_file, contigs, seq_id)
+    # if ".fasta" in os.path.basename(genome_fasta):
+    #     output_fasta = genome_fasta.replace(".fasta", ".contig.fa")
+    # else:
+    #     output_fasta = genome_fasta.replace(".fa", ".contig.fa")
+    # output_fasta = genome_fasta.replace(".fasta", ".contig.fa").replace(".fa", ".contig.fa")
+    base, ext = os.path.splitext(genome_fasta)
+    output_fasta = base + ".contig.fa"
+    process_fasta(genome_fasta, output_fasta, gap_size)

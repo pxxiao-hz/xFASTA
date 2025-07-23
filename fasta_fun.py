@@ -295,19 +295,44 @@ def genome_change_chr_name(genome_fasta, file_chr_list):
     '''
     dic_genome_fasta = fasta_read(genome_fasta)
     dic_ID = {}
+
+    # 读取染色体替换表
+    for line in open(file_chr_list):
+        line = line.strip().split()
+        if len(line) >= 2:  # 确保至少有两列
+            dic_ID[line[0]] = line[1]
+
+    # 输出新文件
     out = output_based_FileInput(genome_fasta, '.ID.change.fasta')
-    for lines in open(file_chr_list):
-        line = lines.strip().split()
-        dic_ID[line[0]] = line[1]
-    for key, value in dic_ID.items():
-        out.write('>' + dic_ID[key] + '\n' + dic_genome_fasta[key] + '\n')
+    for old_id, sequence in dic_genome_fasta.items():
+        if old_id in dic_ID:
+            # 写入新ID + 原序列
+            out.write(f'>{dic_ID[old_id]}\n{sequence}\n')
+        else:
+            # 保留未匹配的染色体
+            out.write(f'>{old_id}\n{sequence}\n')
+    out.close()
+
+
+    # out = output_based_FileInput(genome_fasta, '.ID.change.fasta')
+    # for lines in open(file_chr_list):
+    #     line = lines.strip().split()
+    #     dic_ID[line[0]] = line[1]
+    # for key, value in dic_ID.items():
+    #     out.write('>' + dic_ID[key] + '\n' + dic_genome_fasta[key] + '\n')
+    #
+    # for key, value in dic_genome_fasta.items():
+    #     if key in dic_ID:
+    #         out.write('>' + dic_genome_fasta[key] + '\n')
+    #     else:
+    #         continue
 
     # for key, values in dic_genome_fasta.items():
     #     if key in dic_ID.keys():
     #         out.write('>' + key + '\n' + dic_genome_fasta[dic_ID[key]] + '\n')
     #     else:
     #         out.write('>' + key + '\n' + dic_genome_fasta[key] + '\n')
-    out.close()
+    # out.close()
     return None
 
 

@@ -142,16 +142,18 @@ def main():# 定义命令行参数和选项
     # 定义 fun-seven 命令的子命令和选项: genome
     func_genome_parser = subparsers.add_parser('genome', formatter_class=argparse.RawTextHelpFormatter,
                                              help = 'Genome operation')
-    func_genome_parser.add_argument('-m', '--model', type=str, required=True, choices=['survey', 'telomere'],
+    func_genome_parser.add_argument('-m', '--model', type=str, required=True, choices=['survey', 'telomere', 'split_by_gap'],
                                     help = 'genome sub command, including: \n'
                                            '\tsurvey: genome survey based on Illumina reads, -p required \n'
-                                           '\ttelomere: genome telomere identified, [-i/--input_genome] required')
+                                           '\ttelomere: genome telomere identified, [-i/--input_genome] required \n'
+                                           '\tsplit_by_gap: Cut at the gap, obtain contig-level genome, [-i/--input_genome] required \n')
     func_genome_parser.add_argument('-k', '--kmersize', type=int, required=False, default=21, help='kmer size [21]')
     func_genome_parser.add_argument('-c', '--count', type=int, required=False, default=10000000, help='High count value of histogram [10000000]')
     func_genome_parser.add_argument('-b', '--poly', type=int, required=False, default=2, help = 'poly [2]')
     func_genome_parser.add_argument('-t', '--threads', type=int, required=False, default=16, help = 'threads [16]')
     func_genome_parser.add_argument('-p', '--path', type=str, required=False, help='path of fastq reads, decompress format ')
     func_genome_parser.add_argument('-l', '--length', type=int, required=False, default=150, help = 'reads length [150] \n')
+    func_genome_parser.add_argument('-g', '--gap_size', type=int, required=False, default=100, help = 'gap size [100]')
     func_genome_parser.add_argument('-i', '--inputGenome', help = 'The genome fasta file')
 
     # 解析命令行参数
@@ -275,10 +277,13 @@ def main():# 定义命令行参数和选项
         path = args.path
         genome_poly = args.poly
         genome_fasta = args.inputGenome
+        gap_size = args.gap_size
         if model == 'survey':
             genome_survey(kmersize, length, count, threads, path, genome_poly)
         elif model == 'telomere':
             genome_telomere(genome_fasta)
+        elif model == 'split_by_gap':
+            genome_split_chr_by_gap(genome_fasta, gap_size)
 
 
 if __name__ =="__main__":
