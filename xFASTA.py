@@ -153,7 +153,7 @@ def main():# 定义命令行参数和选项
     func_genome_parser.add_argument('-t', '--threads', type=int, required=False, default=16, help = 'threads [16]')
     func_genome_parser.add_argument('-p', '--path', type=str, required=False, help='path of fastq reads, decompress format ')
     func_genome_parser.add_argument('-l', '--length', type=int, required=False, default=150, help = 'reads length [150] \n')
-    func_genome_parser.add_argument('-g', '--gap_size', type=int, required=False, default=100, help = 'gap size [100]')
+    func_genome_parser.add_argument('-g', '--gap_size', type=int, required=False, default=None, help = 'Minimum number of consecutive N/n used to split sequence (default: any length)')
     func_genome_parser.add_argument('-i', '--inputGenome', help = 'The genome fasta file')
 
     # 解析命令行参数
