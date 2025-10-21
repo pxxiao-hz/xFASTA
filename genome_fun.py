@@ -175,10 +175,10 @@ def genome_split_chr_by_gap(genome_fasta, gap_size=None):
         """ 根据连续N的数量切割序列 """
         if gap_size is None:
             # 匹配任意 >=1 个连续N
-            pattern = r"N+"
+            pattern = r"[Nn]+"
         else:
             # 匹配大于等于 gap_size 个连续N
-            pattern = r"N{" + str(gap_size) + ",}"
+            pattern = r"[Nn]{" + str(gap_size) + ",}"
         return [contig for contig in re.split(pattern, sequence) if len(contig) > 0]
 
     def write_fasta(output_file, contigs, seq_id):
