@@ -78,19 +78,20 @@ def extract_based_keywords(file_input, keywords, greedy):
     :param keywords: 关键字，可以是完整的序列ID，也可以是ID的一部分
     :return: none
     '''
+    if greedy is None:
+        greedy = "False"
     l_keywords = keywords.split(',')
     out = output_based_FileInput(file_input, ".extract.fasta")
-    d = fasta_read(file_input)
-    for key,values in d.items():
+    for key, values in iter_fasta_records(file_input):
         for k in l_keywords:
             if greedy == "True":
                 if k == key:
-                    out.write(">" + key + "\n" + values + "\n")
+                    write_fasta_record(out, key, values)
                 else:
                     continue
             elif greedy == "False":
                 if k in key:
-                    out.write(">" + key + "\n" + values + "\n")
+                    write_fasta_record(out, key, values)
                 else:
                     continue
 
@@ -106,10 +107,9 @@ def extract_based_length(file_input, seqlength):
     :return:
     '''
     out = output_based_FileInput(file_input, '.extract.fasta')
-    d = fasta_read(file_input)
-    for key, values in d.items():
+    for key, values in iter_fasta_records(file_input):
         if len(values) > seqlength:
-            out.write('>' + key + '\n' + values + '\n')
+            write_fasta_record(out, key, values)
         else:
             continue
     out.close()
@@ -129,8 +129,9 @@ def extract_based_coords(file_input, coords):
     :return:
     '''
     out = output_based_FileInput(file_input, '.extract.fasta')
-    d = fasta_read(file_input)
     coords_info = coords.split('-')
+    if len(coords_info) != 3:
+        raise ValueError('coords must use chr-start-end format')
     if coords_info[2] != '':
         chr = coords_info[0]
         start = int(coords_info[1]) - 1
@@ -138,12 +139,14 @@ def extract_based_coords(file_input, coords):
     elif coords_info[2] == '':
         chr = coords_info[0]
         start = int(coords_info[1]) - 1
-        end = len(d[chr])
-        # print(end)
-    for key, values in d.items():
+        end = None
+    for key, values in iter_fasta_records(file_input):
         if key == chr:
+            if end is None:
+                end = len(values)
             seq = values[start:end]
-            out.write('>' + chr + ':' + str(start + 1) + '-' + str(end) + '\n' + seq + '\n')
+            write_fasta_record(out, chr + ':' + str(start + 1) + '-' + str(end), seq)
+            break
     out.close()
     return None
 
@@ -157,16 +160,15 @@ def func_get_fasta_length(file_input):
     print(f"对{file_input}进行序列长度统计")
     out = output_based_FileInput(file_input, ".falen")
     out_sort = output_based_FileInput(file_input, ".sort.falen")
-    d_fa = fasta_read(file_input)
-    d_fa_len = {}
+    lengths = []
     # 输出 序列ID 序列长度（没有排序）
-    for key,values in d_fa.items():
-        d_fa_len[key] = len(values)
-        out.write(key + "\t" + str(len(values)) + "\n")
+    for key, values in iter_fasta_records(file_input):
+        seq_len = len(values)
+        lengths.append((key, seq_len))
+        out.write(key + "\t" + str(seq_len) + "\n")
     out.close()
     # 输出 序列ID 序列长度（长度逆向排序)
-    d_fa_len_sort = sorted(d_fa_len.items(), key=lambda item:item[1], reverse=True) # 按照value进行排序
-    for i in d_fa_len_sort:
+    for i in sorted(lengths, key=lambda item: item[1], reverse=True):
         out_sort.write(i[0] + "\t" + str(i[1]) + "\n")
     out_sort.close()
     return None
@@ -237,9 +239,8 @@ def func_fasta_compare(newFA, oldFA):
     :param oldFA: old FASTA file
     :return: none
     '''
-    d_new = fasta_read(newFA)
     d_old = fasta_read(oldFA)
-    for key,value in d_new.items():
+    for key, value in iter_fasta_records(newFA):
         if key in d_old.keys():
             if value == d_old[key]:
                 print("{} is same".format(key))
@@ -293,24 +294,24 @@ def genome_change_chr_name(genome_fasta, file_chr_list):
     :param file_chr_list: 染色体替换文件：第一列原始 ID  第二列新的 ID
     :return:
     '''
-    dic_genome_fasta = fasta_read(genome_fasta)
     dic_ID = {}
 
     # 读取染色体替换表
-    for line in open(file_chr_list):
-        line = line.strip().split()
-        if len(line) >= 2:  # 确保至少有两列
-            dic_ID[line[0]] = line[1]
+    with open(file_chr_list) as handle:
+        for line in handle:
+            line = line.strip().split()
+            if len(line) >= 2:  # 确保至少有两列
+                dic_ID[line[0]] = line[1]
 
     # 输出新文件
     out = output_based_FileInput(genome_fasta, '.ID.change.fasta')
-    for old_id, sequence in dic_genome_fasta.items():
+    for old_id, sequence in iter_fasta_records(genome_fasta):
         if old_id in dic_ID:
             # 写入新ID + 原序列
-            out.write(f'>{dic_ID[old_id]}\n{sequence}\n')
+            write_fasta_record(out, dic_ID[old_id], sequence)
         else:
             # 保留未匹配的染色体
-            out.write(f'>{old_id}\n{sequence}\n')
+            write_fasta_record(out, old_id, sequence)
     out.close()
 
 
@@ -344,18 +345,19 @@ def genome_reverse_some_chr(genome_fasta, file_chr_list):
     :return:
     '''
 
-    dic_genome_fasta = fasta_read(genome_fasta)
     out = output_based_FileInput(genome_fasta, '.rev.genome.fasta')
-    list_rev_ID = []
-    for lines in open(file_chr_list):
-        line = lines.strip().split()
-        list_rev_ID.append(line[0])
-    for key, values in dic_genome_fasta.items():
-        if key not in list_rev_ID:
-            out.write('>' + key + '\n' + dic_genome_fasta[key] + '\n')
+    set_rev_ID = set()
+    with open(file_chr_list) as handle:
+        for lines in handle:
+            line = lines.strip().split()
+            if line:
+                set_rev_ID.add(line[0])
+    for key, values in iter_fasta_records(genome_fasta):
+        if key not in set_rev_ID:
+            write_fasta_record(out, key, values)
         else:
-            new_seq = rev_seq(dic_genome_fasta[key])
-            out.write('>' + key + '\n' + new_seq + '\n')
+            new_seq = rev_seq(values)
+            write_fasta_record(out, key, new_seq)
     out.close()
     return None
 
@@ -367,10 +369,9 @@ def genome_karyotype(genome_fasta):
     :return: None（输出文件）
     '''
     print(f"正在处理 {genome_fasta}，生成核型文件...")
-    d_fa = fasta_read(genome_fasta)
     out_karyotype = output_based_FileInput(genome_fasta, ".karyotype.txt")
 
-    for chrom, seq in d_fa.items():
+    for chrom, seq in iter_fasta_records(genome_fasta):
         length = len(seq)
         out_karyotype.write(f"{chrom}\t1\t{length}\n")
 
@@ -386,11 +387,10 @@ def fasta_extract_based_length(genome_fasta, length_cutoff):
     :param length_cutoff:
     :return:
     '''
-    dic_genome_fasta = fasta_read(genome_fasta)
     out = output_based_FileInput(genome_fasta, f'.{length_cutoff}.fa')
-    for key, values in dic_genome_fasta.items():
+    for key, values in iter_fasta_records(genome_fasta):
         if len(values) > length_cutoff:
-            out.write('>' + key + '\n' + values[0] + '\n')
+            write_fasta_record(out, key, values)
         else:
             continue
     out.close()

@@ -12,10 +12,15 @@ from collections import defaultdict
 
 ### 判断文件是否存在
 def check_file_in_path(file, cmd):
+    '''
+    Run a command only when the expected output file is missing.
+    :param file: expected output file path
+    :param cmd: shell command used to create the file
+    '''
     if os.path.exists(file):
         print(f'[info] {file} exists, CMD: {cmd}; PASS!')
     else:
-        subprocess.run(cmd, shell=True)
+        subprocess.run(cmd, shell=True, check=True)
     return None
 
 
@@ -26,15 +31,56 @@ def fasta_read(file_input):
     :return: d: id as kye, seq as value
     '''
     d = {}
-    for lines in open(file_input, "r"):
-        if lines.startswith(">"):
-            id = lines.strip().replace(">", "")
-            d[id] = []
-        else:
-            d[id].append(lines.strip())
+    with open(file_input, "r") as handle:
+        for lines in handle:
+            if lines.startswith(">"):
+                id = lines.strip().replace(">", "")
+                d[id] = []
+            else:
+                d[id].append(lines.strip())
     for key, values in d.items():
         d[key] = "".join(values)
     return d
+
+
+def iter_fasta_records(file_input):
+    '''
+    Stream FASTA records one at a time.
+    :param file_input: .fasta/.fa file
+    :return: yields (record_id, sequence)
+    '''
+    record_id = None
+    seq_parts = []
+    with open(file_input, "r") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith(">"):
+                if record_id is not None:
+                    yield record_id, "".join(seq_parts)
+                record_id = line[1:]
+                seq_parts = []
+            else:
+                seq_parts.append(line)
+        if record_id is not None:
+            yield record_id, "".join(seq_parts)
+
+
+def write_fasta_record(handle, record_id, sequence, line_width=None):
+    '''
+    Write one FASTA record with wrapped sequence lines.
+    :param handle: writable file handle
+    :param record_id: FASTA record id without leading ">"
+    :param sequence: sequence string
+    :param line_width: optional sequence wrap width; None preserves the previous one-line output
+    '''
+    handle.write(f">{record_id}\n")
+    if line_width is None:
+        handle.write(sequence + "\n")
+    else:
+        for i in range(0, len(sequence), line_width):
+            handle.write(sequence[i:i + line_width] + "\n")
 
 
 def split_fasta_based_bp(file_input, length):
@@ -44,22 +90,19 @@ def split_fasta_based_bp(file_input, length):
     :param length: 按多少bp进行拆分
     :return: none
     '''
-    d_fa = fasta_read(file_input)
+    if length <= 0:
+        raise ValueError("length must be greater than 0")
+
     s = 1   # 多少条序列
-    for key,values in d_fa.items():
+    for key, values in iter_fasta_records(file_input):
         print("正在拆分第{}条染色体...".format(s))
         m = 1
         for i in range(0, len(values), length):
-            if i + length < len(values):
-                # 没到末尾
-                out_split = open("{}_{}.fa".format(key.replace(">",""), str(m)), "w")
-                out_split.write(">" + key + "_" + str(m) + "\n" + values[i:i + length] + "\n")
-                m += 1
-            else:
-                # 到末尾
-                out_split = open("{}_{}.fa".format(key.replace(">", ""), str(m)), "w")
-                out_split.write(">" + key + "_" + str(m) + "\n" + values[i:] + "\n")
-                s += 1
+            seq = values[i:i + length]
+            with open("{}_{}.fa".format(key.replace(">", ""), str(m)), "w") as out_split:
+                write_fasta_record(out_split, key + "_" + str(m), seq)
+            m += 1
+        s += 1
     print("染色体拆分完成！")
     return None
 
@@ -71,20 +114,25 @@ def split_fasta_based_number(file_input, number):
     :param number: 每个文件包含的序列个数
     :return: none
     '''
-    d_fa = fasta_read(file_input)
-    n = 1  # 控制文件包含的pep id个数
-    s = 1  # 控制输出文件的名字
-    for key, values in d_fa.items():
-        out = "out_" + str(s)
-        out = open(out, "a+")
-        out.write('>' + key + "\n" + values + "\n")
-        out.close()
-        n += 1
-        if n <= number:
-            continue
-        else:
-            s += 1
-            n = 1
+    if number <= 0:
+        raise ValueError("number must be greater than 0")
+
+    output_index = 1
+    records_in_output = 0
+    out = None
+    try:
+        for key, values in iter_fasta_records(file_input):
+            if out is None or records_in_output >= number:
+                if out is not None:
+                    out.close()
+                out = open("out_" + str(output_index), "w")
+                output_index += 1
+                records_in_output = 0
+            write_fasta_record(out, key, values)
+            records_in_output += 1
+    finally:
+        if out is not None:
+            out.close()
     return None
 
 def get_Nnumber(BaseSum, Length, a):

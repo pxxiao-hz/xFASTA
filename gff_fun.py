@@ -146,35 +146,40 @@ def func_gff_NewGFF(file_input):
     有的gff不完整，缺少gene这一项，或者缺少exon，或者缺少exon；
     目的是根据mRNA补齐gene，根据CDS补齐exon。
     # version1.0: 不对缺少的东西判断，直接暴力将gene和exon同时输出，最后再去除冗余
-    # version2.0: ???? (如何去除冗余？) ---- awk '!a[$0]++' file.txt > file_new.txt
     :param file_input: gff.file
     :return: none
     '''
     prefix = os.path.basename(file_input).replace(".gff3", "")
     prefix = prefix.replace(".gff", "")
     file_output = prefix + ".new.gff"
-    out = open(file_output, "w")
-    for lines in open(file_input, "r"):
-        # filter
-        if lines.startswith("#"): continue  # 过滤#
-        line = lines.strip().split()
-        if len(line) < 8: continue
-        if line[2] not in ['mRNA', 'exon', 'CDS', 'gene', 'five_prime_UTR', 'three_prime_UTR',
-                           'UTR_3', 'UTR_5']:
-            continue
-        # output
-        if line[2] == "mRNA":
-            gene_list = line[0:2] + ["gene"] + line[3:]
-            out.write("\t".join(gene_list) + "\n")
-            out.write("\t".join(line) + "\n")
-        elif line[2] == "CDS":
-            exon_list = line[0:2] + ["exon"] + line[3:]
-            out.write("\t".join(exon_list) + "\n")
-            out.write("\t".join(line) + "\n")
-        else:
-            out.write("\t".join(line) + "\n")
-    out.close()
-    cmd_gff_filter = 'awk \'!a[$0]++\' {} > xpx_temp.txt '.format(file_output)
-    os.system(cmd_gff_filter)
-    os.system("mv xpx_temp.txt {}".format(file_output))
+    seen_lines = set()
+
+    def write_unique(handle, fields):
+        """Write each generated GFF line once while preserving first-seen order."""
+        text = "\t".join(fields)
+        if text in seen_lines:
+            return
+        seen_lines.add(text)
+        handle.write(text + "\n")
+
+    with open(file_output, "w") as out, open(file_input, "r") as handle:
+        for lines in handle:
+            # filter
+            if lines.startswith("#"): continue  # 过滤#
+            line = lines.strip().split()
+            if len(line) < 8: continue
+            if line[2] not in ['mRNA', 'exon', 'CDS', 'gene', 'five_prime_UTR', 'three_prime_UTR',
+                               'UTR_3', 'UTR_5']:
+                continue
+            # output
+            if line[2] == "mRNA":
+                gene_list = line[0:2] + ["gene"] + line[3:]
+                write_unique(out, gene_list)
+                write_unique(out, line)
+            elif line[2] == "CDS":
+                exon_list = line[0:2] + ["exon"] + line[3:]
+                write_unique(out, exon_list)
+                write_unique(out, line)
+            else:
+                write_unique(out, line)
     return None
