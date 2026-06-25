@@ -5,8 +5,8 @@ author: pxxiao
 version: 1.0
 description: 函数文件
 '''
-import readline, os, re, subprocess
-from Bio import SeqIO
+import os
+import subprocess
 from collections import defaultdict
 
 
@@ -30,17 +30,7 @@ def fasta_read(file_input):
     :param file_input: .fasta
     :return: d: id as kye, seq as value
     '''
-    d = {}
-    with open(file_input, "r") as handle:
-        for lines in handle:
-            if lines.startswith(">"):
-                id = lines.strip().replace(">", "")
-                d[id] = []
-            else:
-                d[id].append(lines.strip())
-    for key, values in d.items():
-        d[key] = "".join(values)
-    return d
+    return dict(iter_fasta_records(file_input))
 
 
 def iter_fasta_records(file_input):
@@ -137,19 +127,20 @@ def split_fasta_based_number(file_input, number):
 
 def get_Nnumber(BaseSum, Length, a):
     'get N 50,N 90, N 60...'
-    N_pos = BaseSum / 100 * a
-    Length.sort()
-    Length.reverse()
+    return _get_nnumber_from_sorted(BaseSum, sorted(Length, reverse=True), a)
+
+
+def _get_nnumber_from_sorted(base_sum, sorted_lengths, percentage):
+    """Calculate Nx/Lx from a descending sequence-length list."""
+    N_pos = base_sum / 100 * percentage
     n = 0
     ValueSum = 0
-    for value in Length:
+    for value in sorted_lengths:
         ValueSum += value
         n += 1
         if N_pos <= ValueSum:
-            N_length = value
-            N_number = n
-            break
-    return N_length, N_number
+            return value, n
+    raise ValueError("Length must contain at least one sequence")
 
 
 def func_n50(file_input):
@@ -163,75 +154,60 @@ def func_n50(file_input):
     prefix = prefix.replace(".fasta", "")
     prefix = prefix.replace(".fa", "")
     file_output = prefix + ".stat.txt"  # 存储相关信息
-    out = open(file_output, "w")
-
     BaseSum, Length = 0, []
-    ValueSum, N50 = 0, 0
-    no_c, no_g, no_a, no_t, no_n = 0, 0, 0, 0, 0
-    no_ctg_10k, no_ctg_50k, no_ctg_100k = 0, 0, 0
-    len_ctg_10k, len_ctg_50k, len_ctg_100k = 0, 0, 0
+    no_ctg_50k, no_ctg_100k = 0, 0
+    len_ctg_50k, len_ctg_100k = 0, 0
     no_ctg_lt_100k = 0
     len_ctg_lt_100k = 0
 
-    for record in SeqIO.parse(open(file_input), "fasta"):
-        BaseSum += len(record.seq)
-        Length.append(len(record.seq))
-        seq = record.seq.lower()
-        no_c += seq.count('c')
-        no_g += seq.count('g')
-        no_a += seq.count('a')
-        no_t += seq.count('t')
-        no_n += seq.count('n')
-
-        if len(record.seq) > 10000:
-            no_ctg_10k += 1
-            len_ctg_10k += len(record.seq)
-        if len(record.seq) > 50000:
+    for _, sequence in iter_fasta_records(file_input):
+        seq_length = len(sequence)
+        BaseSum += seq_length
+        Length.append(seq_length)
+        if seq_length > 50000:
             no_ctg_50k += 1
-            len_ctg_50k += len(record.seq)
-        if len(record.seq) > 100000:
+            len_ctg_50k += seq_length
+        if seq_length > 100000:
             no_ctg_100k += 1
-            len_ctg_100k += len(record.seq)
-        if len(record.seq) < 100000:
+            len_ctg_100k += seq_length
+        if seq_length < 100000:
             no_ctg_lt_100k += 1
-            len_ctg_lt_100k += len(record.seq)
+            len_ctg_lt_100k += seq_length
 
-    for i in [10, 20, 30, 40, 50, 60, 70, 80, 90]:
-        N_length = "N" + str(i)
-        N_number = "L" + str(i)
-        N_len, N_num = get_Nnumber(BaseSum, Length, i)
-        if i in [10, 50, 90]:
-            print(N_length + "\t" + str(N_len))
-            print(N_number + "\t" + str(N_num))
-        out.write(N_length + "\t" + str(N_len) + "\n")
-        out.write(N_number + "\t" + str(N_num) + "\n")
-    print('Seq. Num.\t' + str(len(Length)))
-    print('Seq. Min\t' + str(min(Length)))
-    print('Seq. Max\t' + str(max(Length)))
-    print('Seq. Total\t' + str(BaseSum))
-    out.write('Seq. Num.\t' + str(len(Length)) + "\n")
-    out.write('Seq. Min\t' + str(min(Length)) + "\n")
-    out.write('Seq. Max\t' + str(max(Length)) + "\n")
-    out.write('Seq. Total\t' + str(BaseSum) + "\n")
-    ### contig 长度小于某个值
-    print(f'Length < 100k Number\t{str(no_ctg_lt_100k)}')
-    print(f'Length < 100k Length\t{str(len_ctg_lt_100k)}')
-    out.write(f'Length < 100k Num.\t{str(no_ctg_lt_100k)}\n')
-    out.write(f'Length < 100k Len.\t{str(len_ctg_lt_100k)}\n')
+    if not Length:
+        raise ValueError("FASTA file contains no sequences")
 
-    ### contig 长度大于某个值
-    # print('Ctg gt 10k:\t' + str(no_ctg_10k))
-    print('Length > 50k Number\t' + str(no_ctg_50k))
-    print(f'Length > 50k Length\t{str(len_ctg_50k)}')
-    print('Length > 100k Number\t' + str(no_ctg_100k))
-    print(f'Length > 100k Length\t{str(len_ctg_100k)}')
-    # out.write('Ctg gt 10k:\t' + str(no_ctg_10k) + '\n')
-    out.write('Length > 50k Num.\t' + str(no_ctg_50k) + '\n')
-    out.write(f'Length > 50k Len.\t{str(len_ctg_50k)}\n')
-    out.write('Length > 100k Num.\t' + str(no_ctg_100k) + '\n')
-    out.write(f'Length > 100k Len.\t{str(len_ctg_100k)}\n')
-
-    out.close()
+    sorted_lengths = sorted(Length, reverse=True)
+    with open(file_output, "w") as out:
+        for i in [10, 20, 30, 40, 50, 60, 70, 80, 90]:
+            N_length = "N" + str(i)
+            N_number = "L" + str(i)
+            N_len, N_num = _get_nnumber_from_sorted(BaseSum, sorted_lengths, i)
+            if i in [10, 50, 90]:
+                print(N_length + "\t" + str(N_len))
+                print(N_number + "\t" + str(N_num))
+            out.write(N_length + "\t" + str(N_len) + "\n")
+            out.write(N_number + "\t" + str(N_num) + "\n")
+        print('Seq. Num.\t' + str(len(Length)))
+        print('Seq. Min\t' + str(min(Length)))
+        print('Seq. Max\t' + str(max(Length)))
+        print('Seq. Total\t' + str(BaseSum))
+        out.write('Seq. Num.\t' + str(len(Length)) + "\n")
+        out.write('Seq. Min\t' + str(min(Length)) + "\n")
+        out.write('Seq. Max\t' + str(max(Length)) + "\n")
+        out.write('Seq. Total\t' + str(BaseSum) + "\n")
+        print(f'Length < 100k Number\t{str(no_ctg_lt_100k)}')
+        print(f'Length < 100k Length\t{str(len_ctg_lt_100k)}')
+        out.write(f'Length < 100k Num.\t{str(no_ctg_lt_100k)}\n')
+        out.write(f'Length < 100k Len.\t{str(len_ctg_lt_100k)}\n')
+        print('Length > 50k Number\t' + str(no_ctg_50k))
+        print(f'Length > 50k Length\t{str(len_ctg_50k)}')
+        print('Length > 100k Number\t' + str(no_ctg_100k))
+        print(f'Length > 100k Length\t{str(len_ctg_100k)}')
+        out.write('Length > 50k Num.\t' + str(no_ctg_50k) + '\n')
+        out.write(f'Length > 50k Len.\t{str(len_ctg_50k)}\n')
+        out.write('Length > 100k Num.\t' + str(no_ctg_100k) + '\n')
+        out.write(f'Length > 100k Len.\t{str(len_ctg_100k)}\n')
     return None
 
 
@@ -320,8 +296,8 @@ def rev_seq(seq):
     :param seq:
     :return:
     '''
-    base_trans = {'A': 'T', 'C': 'G', 'T': 'A', 'G': 'C', 'N': 'N', 'a': 't', 'c': 'g', 't': 'a', 'g': 'c', 'n': 'n'}
-    rev_seq = list(reversed(seq))
-    rev_seq_list = [base_trans[k] for k in rev_seq]
-    rev_seq = ''.join(rev_seq_list)
-    return (rev_seq)
+    complement = str.maketrans(
+        "ACGTRYMKBDHVNacgtrymkbdhvn",
+        "TGCAYRKMVHDBNtgcayrkmvhdbn",
+    )
+    return seq.translate(complement)[::-1]

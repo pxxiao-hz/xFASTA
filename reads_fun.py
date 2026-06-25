@@ -6,9 +6,8 @@ version: 1.0
 description: 处理FASTQ文件的函数
 '''
 import os
-import readline, subprocess
+import subprocess
 import gzip
-import shlex
 from util import *
 from Bio import SeqIO
 
@@ -155,20 +154,16 @@ def func_reads_ID_simplified(file_input):
 
 def build_chopper_filter_command(file_input, quality, length, chopper="chopper"):
     '''
-    Build the ONT read filtering shell pipeline.
+    Build the chopper argument list and output path.
     :param file_input: input FASTQ.gz file
     :param quality: minimum read quality
     :param length: minimum read length
     :param chopper: chopper executable or full path
-    :return: (command, output_file)
+    :return: (argument list, output_file)
     '''
     file_output_name = _fastq_prefix(file_input)
     output = f"{file_output_name}.q{quality}.l{length}.fastq.gz"
-    command = (
-        f"gunzip -c {shlex.quote(file_input)} | "
-        f"{shlex.quote(chopper)} -q {quality} -l {length} | "
-        f"gzip > {shlex.quote(output)}"
-    )
+    command = [chopper, "-q", str(quality), "-l", str(length)]
     return command, output
 
 
@@ -181,12 +176,58 @@ def func_reads_filter_ONT_reads(file_input, quality, length, chopper="chopper"):
     :param chopper: chopper executable or full path
     :return: None
     '''
-    cmd_chopper, _ = build_chopper_filter_command(file_input, quality, length, chopper)
-    subprocess.run(cmd_chopper, shell=True, close_fds=True, check=True)
+    cmd_chopper, output = build_chopper_filter_command(file_input, quality, length, chopper)
+    input_handle = None
+    decompressor = None
+    chopper_process = None
+    compressor = None
+    try:
+        if file_input.endswith(".gz"):
+            decompressor = subprocess.Popen(
+                ["gzip", "-cd", file_input],
+                stdout=subprocess.PIPE,
+            )
+            chopper_input = decompressor.stdout
+        else:
+            input_handle = open(file_input, "rb")
+            chopper_input = input_handle
+
+        with open(output, "wb") as output_handle:
+            chopper_process = subprocess.Popen(
+                cmd_chopper,
+                stdin=chopper_input,
+                stdout=subprocess.PIPE,
+            )
+            if decompressor is not None:
+                decompressor.stdout.close()
+            compressor = subprocess.Popen(
+                ["gzip", "-c"],
+                stdin=chopper_process.stdout,
+                stdout=output_handle,
+            )
+            chopper_process.stdout.close()
+
+            compressor_returncode = compressor.wait()
+            chopper_returncode = chopper_process.wait()
+            decompressor_returncode = decompressor.wait() if decompressor is not None else 0
+
+        for command, returncode in (
+            (["gzip", "-cd", file_input], decompressor_returncode),
+            (cmd_chopper, chopper_returncode),
+            (["gzip", "-c"], compressor_returncode),
+        ):
+            if returncode:
+                raise subprocess.CalledProcessError(returncode, command)
+    finally:
+        if input_handle is not None:
+            input_handle.close()
+        for process in (compressor, chopper_process, decompressor):
+            if process is not None and process.poll() is None:
+                process.terminate()
+                process.wait()
     return None
 
 
-import os
 import pandas as pd
 
 def func_reads_stat_from_seqkit_stat(file_input):

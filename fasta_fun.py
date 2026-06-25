@@ -6,7 +6,6 @@ version: 1.0
 description: 处理FASTA文件的函数
 '''
 import os.path
-import readline, subprocess
 from util import *
 
 
@@ -182,53 +181,23 @@ def func_fasta_IDsimplified(file_input, s):
     :return:
     '''
 
-    d_fa = {}
     basename = os.path.basename(file_input)
     if ".fasta" in basename:
         basename = basename.replace(".fasta", ".IDsimp.fasta")
     else:
         basename = basename.replace(".fa", ".IDsimp.fa")
-    out = open(basename, "w")
-    for lines in open(file_input, "r"):
-        if lines.startswith(">"):
-            # 如果TAB存在
-            if lines.strip().count('\t') > 0:
-                line = lines.strip().split()
-                id = line[0]
-            elif s in lines:
-                if s == "." or s == "_":
-                    line = lines.strip().split(s)
-                    id = line[0]
-                elif s == "-":
-                    line = lines.strip().split(s)
-                    id = ".".join(line[:-1])
-            elif s == "None":
-                line = lines.strip().split()
-                id = line[0]
-            else:
-                line = lines.strip()
-                id = line
-        else:
-            if id not in d_fa.keys():
-                d_fa[id] = []
-                d_fa[id].append(lines.strip())
-            else:
-                d_fa[id].append(lines.strip())
-    for key, values in d_fa.items():
-        d_fa[key] = "".join(values)
+    def simplify_id(record_id):
+        if "\t" in record_id or s in (None, "None"):
+            return record_id.split()[0]
+        if s in (".", "_") and s in record_id:
+            return record_id.split(s)[0]
+        if s == "-" and s in record_id:
+            return ".".join(record_id.split(s)[:-1])
+        return record_id
 
-    for key, values in d_fa.items():
-        out.write(key + "\n" + values + "\n")
-    out.close()
-
-    # cmd1 = "seqkit seq -w 80 {} > temp".format(basename)
-    # cmd2 = " mv temp {}".format(basename)
-    # subprocess.run(cmd1, shell=True, close_fds=True)
-    # subprocess.run(cmd2, shell=True, close_fds=True)
-
-    # # 有的文件中会有“*”字符，这时候可以选择删掉
-    # cmd = " sed -i 's/*//g' {}".format(basename)
-    # subprocess.run(cmd, shell=True, close_fds=True)
+    with open(basename, "w") as out:
+        for record_id, sequence in iter_fasta_records(file_input):
+            write_fasta_record(out, simplify_id(record_id), sequence)
     return None
 
 
@@ -258,13 +227,23 @@ def func_fasta_toPhy(file_input):
     :param file_input: FASTA file
     :return: none
     '''
-    out = output_based_FileInput(file_input, ".phy")
-    with open(file_input, 'r') as fin:
-        sequences = [(m.group(1), ''.join(m.group(2).split()))
-                     for m in re.finditer(r'(?m)^>([^ \n]+)[^\n]*([^>]*)', fin.read())]
-    out.write('%d %d\n' % (len(sequences), len(sequences[0][1])))
-    for item in sequences:
-        out.write('%-20s %s\n' % item)
+    sequence_count = 0
+    alignment_length = None
+    for _, sequence in iter_fasta_records(file_input):
+        if alignment_length is None:
+            alignment_length = len(sequence)
+        elif len(sequence) != alignment_length:
+            raise ValueError("All FASTA sequences must have the same length for PHYLIP output")
+        sequence_count += 1
+
+    if alignment_length is None:
+        raise ValueError("FASTA file contains no sequences")
+
+    with output_based_FileInput(file_input, ".phy") as out:
+        out.write(f"{sequence_count} {alignment_length}\n")
+        for record_id, sequence in iter_fasta_records(file_input):
+            sequence_id = record_id.split()[0]
+            out.write(f"{sequence_id:<20} {sequence}\n")
     return None
 
 
@@ -276,12 +255,10 @@ def func_fasta_count(file_input, keywords):
     :return: none
     '''
     frequency = 0
-    for lines in open(file_input, "r"):
-        line = lines.strip()
-        length = len(line)
-        # print(f"长度为：{length}")
-        frequency += line.count(keywords)
-        indices = [i for i in range(len(line)) if line.startswith(keywords, i)]
+    if not keywords:
+        raise ValueError("keywords must not be empty")
+    for _, sequence in iter_fasta_records(file_input):
+        frequency += sequence.count(keywords)
     print(f"\"{keywords}\" 出现的频率为：{frequency} 次。")
     # print(f"出现的索引值为：{indices}")
     return None

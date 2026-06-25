@@ -13,7 +13,10 @@ from fasta_fun import (  # noqa: E402
     extract_based_keywords,
     extract_based_length,
     fasta_extract_based_length,
+    func_fasta_IDsimplified,
     func_fasta_compare,
+    func_fasta_count,
+    func_fasta_toPhy,
     func_get_fasta_length,
     genome_change_chr_name,
     genome_karyotype,
@@ -152,6 +155,45 @@ class FastaFunTest(unittest.TestCase):
             "missing not in " + str(old_fasta) + "\n"
             "missing is not same\n",
         )
+
+    def test_func_fasta_id_simplified_streams_records(self):
+        input_fasta = self.workdir / "ids.fa"
+        input_fasta.write_text(">gene.1 description\nACGT\n>other.2\nNN\n")
+
+        func_fasta_IDsimplified(str(input_fasta), ".")
+
+        self.assertEqual(
+            (self.workdir / "ids.IDsimp.fa").read_text(),
+            ">gene\nACGT\n>other\nNN\n",
+        )
+
+    def test_func_fasta_to_phy_uses_two_pass_conversion(self):
+        alignment = self.workdir / "alignment.fa"
+        alignment.write_text(">sample1 description\nACGT\n>sample2\nTGCA\n")
+
+        func_fasta_toPhy(str(alignment))
+
+        self.assertEqual(
+            (self.workdir / "alignment.phy").read_text(),
+            "2 4\nsample1              ACGT\nsample2              TGCA\n",
+        )
+
+    def test_func_fasta_to_phy_rejects_unequal_sequence_lengths(self):
+        alignment = self.workdir / "bad.fa"
+        alignment.write_text(">sample1\nACGT\n>sample2\nTGC\n")
+
+        with self.assertRaisesRegex(ValueError, "same length"):
+            func_fasta_toPhy(str(alignment))
+
+    def test_func_fasta_count_ignores_headers_and_joins_wrapped_lines(self):
+        input_fasta = self.workdir / "motif.fa"
+        input_fasta.write_text(">AAA-header\nAA\nAA\n")
+        stdout = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout):
+            func_fasta_count(str(input_fasta), "AAA")
+
+        self.assertIn("1 次", stdout.getvalue())
 
 
 if __name__ == "__main__":

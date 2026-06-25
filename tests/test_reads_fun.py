@@ -15,6 +15,7 @@ from reads_fun import (  # noqa: E402
     func_reads_ID_simplified,
     func_reads_deduplication_based_ID,
     func_reads_extract_based_ID,
+    func_reads_filter_ONT_reads,
 )
 
 
@@ -99,7 +100,7 @@ class ReadsFunTest(unittest.TestCase):
         self.assertEqual(len(output), 3)
         self.assertEqual(float(output[0]), 40.0)
 
-    def test_build_chopper_filter_command_quotes_paths_and_uses_configured_tool(self):
+    def test_build_chopper_filter_command_returns_argument_list(self):
         command, output = build_chopper_filter_command(
             "reads dir/sample.fastq.gz",
             7,
@@ -110,10 +111,23 @@ class ReadsFunTest(unittest.TestCase):
         self.assertEqual(output, "sample.q7.l100000.fastq.gz")
         self.assertEqual(
             command,
-            "gunzip -c 'reads dir/sample.fastq.gz' | "
-            "'/opt/chopper bin/chopper' -q 7 -l 100000 | "
-            "gzip > sample.q7.l100000.fastq.gz",
+            ["/opt/chopper bin/chopper", "-q", "7", "-l", "100000"],
         )
+
+    def test_filter_ont_uses_pipeline_without_shell(self):
+        input_fastq = self.write_fastq()
+        fake_chopper = self.workdir / "fake-chopper"
+        fake_chopper.write_text(
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            "sys.stdout.buffer.write(sys.stdin.buffer.read())\n"
+        )
+        fake_chopper.chmod(0o755)
+
+        func_reads_filter_ONT_reads(str(input_fastq), 7, 3, str(fake_chopper))
+
+        output = self.read_gzip_text(self.workdir / "reads.q7.l3.fastq.gz")
+        self.assertEqual(output, FASTQ_TEXT)
 
 
 if __name__ == "__main__":
