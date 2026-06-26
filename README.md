@@ -1,4 +1,15 @@
 # xFASTA
+
+xFASTA is a command-line toolkit for common FASTA, FASTQ, GFF, genome assembly, gap, and telomere-related operations.
+
+## Requirements
+
+* Python >= 3.8
+* biopython >= 1.80
+* pandas >= 1.5
+* pysam >= 0.21
+* scipy >= 1.9
+
 ## Usage
 ```shell
 $ xFASTA -h
