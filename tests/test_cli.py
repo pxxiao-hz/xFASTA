@@ -43,6 +43,15 @@ class CliTest(unittest.TestCase):
         self.assertEqual(error.exception.code, 0)
         self.assertIn("处理 FASTA 文件", stdout.getvalue())
 
+    def test_version_returns_package_version(self):
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            with self.assertRaises(SystemExit) as error:
+                xFASTA.main(["--version"])
+
+        self.assertEqual(error.exception.code, 0)
+        self.assertEqual(stdout.getvalue().strip(), "xFASTA 2.0.0")
+
     def test_fasta_model_is_required(self):
         code, stderr = self.parse_with_stderr(["fasta", "-i", "genome.fa"])
 

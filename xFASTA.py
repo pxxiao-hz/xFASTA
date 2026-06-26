@@ -2,17 +2,20 @@
 '''
 time: 2023-04-05
 author: pxxiao
-version: 1.0
+version: 2.0.0
 description: 用于日常的 FASTA 文件处理，其他功能待定
 '''
 
 import argparse
+
+__version__ = '2.0.0'
 
 
 def build_parser():
     """Build the CLI parser without importing heavy bioinformatics modules."""
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter,
                                      description='pxx 的分析小工具')
+    parser.add_argument('--version', action='version', version=f'xFASTA {__version__}')
     subparsers = parser.add_subparsers(dest='function', metavar='')
 
     # FASTA subcommand.
