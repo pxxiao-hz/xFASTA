@@ -6,10 +6,26 @@ version: 1.0
 description: 处理FASTQ文件的函数
 '''
 import os
-import readline, subprocess
+import subprocess
 import gzip
 from util import *
 from Bio import SeqIO
+
+
+def _open_fastq_text(file_input):
+    """Open plain or gzipped FASTQ input as text."""
+    if file_input.endswith(".gz"):
+        return gzip.open(file_input, "rt")
+    return open(file_input, "r")
+
+
+def _fastq_prefix(file_input):
+    """Return the basename prefix used by FASTQ output files."""
+    name = os.path.basename(file_input)
+    for suffix in (".fastq.gz", ".fq.gz", ".fastq", ".fq"):
+        if name.endswith(suffix):
+            return name[:-len(suffix)]
+    return os.path.splitext(name)[0]
 
 
 def fun_qv_percent(list, qv):
@@ -27,39 +43,40 @@ def fun_qv_percent(list, qv):
 
 def func_get_reads_phreads(file_input):
 
-    read_file = os.path.basename(file_input)
-    pfx = read_file.replace('.gz', '')
-    out = open(pfx+".qv.txt", "w")     # 文件存储每个read的平均质量值
-    # # 文件可以处理压缩和未压缩
-    # if pfx.endswith('.gz'):
-    #     with gzip.open(pfx, 'rt') as f:
-    #         fastq_lines = f.readlines()
-    # else:
-    #     with open(pfx, 'r') as f:
-    #         fastq_lines = f.readlines()
+    pfx = _fastq_prefix(file_input)
+    out = open(pfx + ".qv.txt", "w")     # 文件存储每个read的平均质量值
 
-    qualities = []      # 质量分数list
-    with gzip.open(read_file, 'rt') as f:
-        # 逐行读取文件内容
-        for line in f:
-            # 选择读取包含质量值的行
-            if line.startswith('+'):
-                qline = next(f).strip()
-                quality_scores = [ord(q) - 33 for q in qline]  # 将 ASCII 码转换为实际质量分数
-                qv = sum(quality_scores) / len(quality_scores)
-                out.write(str(qv) + "\n")
-                # print(qv)
-                # print(quality_scores)
-                qualities.append(qv)  # 添加到质量分数列表中
-    fun_qv_percent(qualities, 20)
-    fun_qv_percent(qualities, 25)
-    fun_qv_percent(qualities, 30)
-    fun_qv_percent(qualities, 35)
-    fun_qv_percent(qualities, 40)
-    print("Number of quality scores:", len(qualities))
-    print("Minimum quality score:", min(qualities))
-    print("Maximum quality score:", max(qualities))
-    print("Average quality score:", sum(qualities) / len(qualities))
+    count = 0
+    total = 0
+    min_qv = None
+    max_qv = None
+    threshold_counts = {20: 0, 25: 0, 30: 0, 35: 0, 40: 0}
+    with _open_fastq_text(file_input) as handle:
+        for record in SeqIO.parse(handle, "fastq"):
+            quality_scores = record.letter_annotations["phred_quality"]
+            if not quality_scores:
+                continue
+            qv = sum(quality_scores) / len(quality_scores)
+            out.write(str(qv) + "\n")
+            count += 1
+            total += qv
+            min_qv = qv if min_qv is None else min(min_qv, qv)
+            max_qv = qv if max_qv is None else max(max_qv, qv)
+            for threshold in threshold_counts:
+                if qv >= threshold:
+                    threshold_counts[threshold] += 1
+    out.close()
+
+    if count == 0:
+        print("Number of quality scores:", 0)
+        return None
+
+    for threshold in sorted(threshold_counts):
+        print("QV{}: ".format(threshold), (threshold_counts[threshold] / count) * 100)
+    print("Number of quality scores:", count)
+    print("Minimum quality score:", min_qv)
+    print("Maximum quality score:", max_qv)
+    print("Average quality score:", total / count)
     return None
 
 
@@ -76,20 +93,14 @@ def func_reads_deduplication_based_ID(file_input):
     @author: pxxiao
     version: v1
     '''
-    list_readID = []
-    # 输出文件名称
-    name = os.path.basename(file_input)
-    if "fq.gz" in name:
-        file_output_name = name.replace("fq.gz", "")
-    elif "fastq.gz" in name:
-        file_output_name = name.replace("fastq.gz", "")
-    out = file_output_name + "redu.fq.gz"
+    seen_read_ids = set()
+    out = _fastq_prefix(file_input) + ".redu.fq.gz"
     # 处理
-    with gzip.open(file_input, "rt") as handle, gzip.open(out, "wt") as output:
+    with _open_fastq_text(file_input) as handle, gzip.open(out, "wt") as output:
         for record in SeqIO.parse(handle, "fastq"):
             ID = record.id  # reads ID
-            if ID not in list_readID:
-                list_readID.append(ID)
+            if ID not in seen_read_ids:
+                seen_read_ids.add(ID)
                 SeqIO.write(record, output, "fastq")
             else:
                 continue
@@ -102,14 +113,9 @@ def func_reads_extract_based_ID(file_input, read_ID):
     :param file_input: fastq.gz, 压缩文件
     :return: 输出提取的reads序列，还是fastq格式
     '''
-    name = os.path.basename(file_input)
-    if 'fq.gz' in name:
-        file_output_name = name.replace('fq.gz', '')
-    elif 'fastq.gz' in name:
-        file_output_name = name.replace('fastq.gz', '')
-    out = file_output_name + 'extract.fastq.gz'
+    out = _fastq_prefix(file_input) + '.extract.fastq.gz'
     # 处理
-    with gzip.open(file_input, "rt") as handle, gzip.open(out, "wt") as output:
+    with _open_fastq_text(file_input) as handle, gzip.open(out, "wt") as output:
         for record in SeqIO.parse(handle, "fastq"):
             ID = record.id  # reads ID
             if ID == read_ID:
@@ -123,12 +129,11 @@ def func_reads_extract_based_ID(file_input, read_ID):
 def modify_read_id(record):
     read_id_parts = record.id.split(' ')
     new_read_id = read_id_parts[0]
-    print(new_read_id)
 
     # 修改 Read ID
     record.id = new_read_id
-    # record.id = record.id.split(' ')[0]
-    # print(record)
+    record.name = new_read_id
+    record.description = new_read_id
     return record
 
 
@@ -138,45 +143,91 @@ def func_reads_ID_simplified(file_input):
     :param file_input: reads.fastq.gz
     :return: reads.simplified.fastq.gz
     '''
-    name = os.path.basename(file_input)
-    if 'fq.gz' in name:
-        file_output_name = name.replace('fq.gz', '')
-    elif 'fastq.gz' in name:
-        file_output_name = name.replace('fastq.gz', '')
-    out = file_output_name + 'extract.fastq.gz'
+    out = _fastq_prefix(file_input) + '.simplified.fastq.gz'
     # 处理
-    records = []
-    with gzip.open(file_input, 'rt') as handle, gzip.open(out, 'wt') as output:
+    with _open_fastq_text(file_input) as handle, gzip.open(out, 'wt') as output:
         for record in SeqIO.parse(handle, "fastq"):
-            print(record)
             modify_record = modify_read_id(record)
-            records.append(modify_record)
-            # print(modify_record)
-            SeqIO.write(records, output, "fastq")
+            SeqIO.write(modify_record, output, "fastq")
     return None
 
 
-def func_reads_filter_ONT_reads(file_input, quality, length):
+def build_chopper_filter_command(file_input, quality, length, chopper="chopper"):
+    '''
+    Build the chopper argument list and output path.
+    :param file_input: input FASTQ.gz file
+    :param quality: minimum read quality
+    :param length: minimum read length
+    :param chopper: chopper executable or full path
+    :return: (argument list, output_file)
+    '''
+    file_output_name = _fastq_prefix(file_input)
+    output = f"{file_output_name}.q{quality}.l{length}.fastq.gz"
+    command = [chopper, "-q", str(quality), "-l", str(length)]
+    return command, output
+
+
+def func_reads_filter_ONT_reads(file_input, quality, length, chopper="chopper"):
     '''
     对 ONTreads 进行过滤，
     :param file_input: 待输入的 ONT reads
     :param quality: 过滤的 reads 质量值，默认为 7
     :param length: 过滤的长度阈值
+    :param chopper: chopper executable or full path
     :return: None
     '''
-    name = os.path.basename(file_input)
-    if 'fq.gz' in name:
-        file_output_name = name.replace('fq.gz', '')
-    elif 'fastq.gz' in name:
-        file_output_name = name.replace('fastq.gz', '')
-    ### 处理
-    cmd_chopper = f'gunzip -c {file_input} | ~/tools/Anaconda3/envs/chopper/bin/chopper ' \
-                  f'-q {quality} -l {length} | gzip > {file_output_name}q{quality}.l{length}.fastq.gz'
-    subprocess.run(cmd_chopper, shell=True, close_fds=True)
+    cmd_chopper, output = build_chopper_filter_command(file_input, quality, length, chopper)
+    input_handle = None
+    decompressor = None
+    chopper_process = None
+    compressor = None
+    try:
+        if file_input.endswith(".gz"):
+            decompressor = subprocess.Popen(
+                ["gzip", "-cd", file_input],
+                stdout=subprocess.PIPE,
+            )
+            chopper_input = decompressor.stdout
+        else:
+            input_handle = open(file_input, "rb")
+            chopper_input = input_handle
+
+        with open(output, "wb") as output_handle:
+            chopper_process = subprocess.Popen(
+                cmd_chopper,
+                stdin=chopper_input,
+                stdout=subprocess.PIPE,
+            )
+            if decompressor is not None:
+                decompressor.stdout.close()
+            compressor = subprocess.Popen(
+                ["gzip", "-c"],
+                stdin=chopper_process.stdout,
+                stdout=output_handle,
+            )
+            chopper_process.stdout.close()
+
+            compressor_returncode = compressor.wait()
+            chopper_returncode = chopper_process.wait()
+            decompressor_returncode = decompressor.wait() if decompressor is not None else 0
+
+        for command, returncode in (
+            (["gzip", "-cd", file_input], decompressor_returncode),
+            (cmd_chopper, chopper_returncode),
+            (["gzip", "-c"], compressor_returncode),
+        ):
+            if returncode:
+                raise subprocess.CalledProcessError(returncode, command)
+    finally:
+        if input_handle is not None:
+            input_handle.close()
+        for process in (compressor, chopper_process, decompressor):
+            if process is not None and process.poll() is None:
+                process.terminate()
+                process.wait()
     return None
 
 
-import os
 import pandas as pd
 
 def func_reads_stat_from_seqkit_stat(file_input):

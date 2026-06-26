@@ -9,10 +9,10 @@ description: 和 genome 有关的函数
 
 
 # 脚本目的：二代 reads 进行 survey
+import re
 import subprocess
-import sys, os, argparse
-from util import *
-from fasta_fun import *
+import os
+from util import check_file_in_path, iter_fasta_records, write_fasta_record
 from scipy.signal import find_peaks
 
 
@@ -37,7 +37,48 @@ def find_peak(file):
         print(f"峰值位置: {peak}, 峰值值: {data[peak]}")
 
 
-def genome_survey(kmersize, length, count, threads, path, genome_poly):
+def build_genomescope_commands(kmersize, length, genome_poly, genomescope1_script, genomescope2_script):
+    '''
+    Build GenomeScope command strings with configurable script paths.
+    :param kmersize: k-mer size
+    :param length: read length
+    :param genome_poly: ploidy used by GenomeScope v2
+    :param genomescope1_script: GenomeScope v1 R script path
+    :param genomescope2_script: GenomeScope v2 R script path
+    :return: (genomescope1_cmd, genomescope2_cmd)
+    '''
+    cmd_genomescope1 = f'Rscript ' \
+                       f'{genomescope1_script} ' \
+                       f'reads.{kmersize}.histo ' \
+                       f'{kmersize} ' \
+                       f'{length} ' \
+                       f'{kmersize}_genomescope1_output'
+    if genome_poly == 2:
+        cmd_genomescope2 = f'Rscript ' \
+                           f'{genomescope2_script} ' \
+                           f'-i reads.{kmersize}.histo ' \
+                           f'-o {kmersize}_genomescope2_output ' \
+                           f'-k {kmersize}'
+    else:
+        cmd_genomescope2 = f'Rscript ' \
+                           f'{genomescope2_script} ' \
+                           f'-i reads.{kmersize}.histo ' \
+                           f'-o {kmersize}_genomescope2_output ' \
+                           f'-k {kmersize} ' \
+                           f'-p {genome_poly}'
+    return cmd_genomescope1, cmd_genomescope2
+
+
+def genome_survey(
+    kmersize,
+    length,
+    count,
+    threads,
+    path,
+    genome_poly,
+    genomescope1_script="genomescope.R",
+    genomescope2_script="genomescope.R",
+):
     # parser = argparse.ArgumentParser(description=' genome survey based on Illumina')
     # parser.add_argument('-k', '--kmersize', type=int, default=21, help='kmer size [21]')
     # parser.add_argument('-l', '--length', type=int, default=150, help='reads length [150]')
@@ -69,30 +110,14 @@ def genome_survey(kmersize, length, count, threads, path, genome_poly):
     check_file_in_path(f'reads.{kmersize}.histo', cmd_jellyfish_histo)
 
     ### genome scope v1
-    cmd_genomescope1 = f'Rscript ' \
-                      f'/home/pxxiao/tools/GenomeScope_1/genomescope/genomescope.R ' \
-                      f'reads.{kmersize}.histo ' \
-                      f'{kmersize} ' \
-                      f'{length} ' \
-                      f'{kmersize}_genomescope1_output'
+    cmd_genomescope1, cmd_genomescope2 = build_genomescope_commands(
+        kmersize, length, genome_poly, genomescope1_script, genomescope2_script
+    )
     print('Start genomescope v1')
     print(cmd_genomescope1)
     check_file_in_path(f'{kmersize}_genomescope1_output/summary.txt', cmd_genomescope1)
 
     ### genome scope v2
-    if genome_poly == 2:
-        cmd_genomescope2 = f'Rscript ' \
-                          f'/home/pxxiao/tools/GenomeScope_2/genomescope2.0/genomescope.R ' \
-                          f'-i reads.{kmersize}.histo ' \
-                          f'-o {kmersize}_genomescope2_output ' \
-                          f'-k {kmersize}'
-    else:
-        cmd_genomescope2 = f'Rscript ' \
-                           f'/home/pxxiao/tools/GenomeScope_2/genomescope2.0/genomescope.R ' \
-                           f'-i reads.{kmersize}.histo ' \
-                           f'-o {kmersize}_genomescope2_output ' \
-                           f'-k {kmersize} ' \
-                           f'-p {genome_poly}'
     print(f'Start genomescope v2, genome poly: {genome_poly}')
     print(cmd_genomescope2)
     check_file_in_path(f'{kmersize}_genomescope2_output/summary.txt', cmd_genomescope2)
@@ -113,18 +138,16 @@ def genome_survey(kmersize, length, count, threads, path, genome_poly):
     check_file_in_path(f'{kmersize}_findGSE_output/v1.94.est.reads.{kmersize}.histo.genome.size.estimated.k{kmersize}to{kmersize}.fitted.txt', cmd_findGSE)
 
 
-def genome_telomere(genome_fasta):
+def genome_telomere(genome_fasta, telomere_script="02_find_telomere.py"):
     '''
     使用脚本鉴定端粒；需要借助 外部脚本； 后期可以整合进下FASTA！！！
     :param genome_fasta: genome FASTA
     :return:
     '''
 
-    cmd_telomere_identified = 'python ~/test/scripts/04_T2T/03_evaluate_tools/02_find_telomere.py ' \
-                              f'-i {genome_fasta} ' \
-                              '-l 150000 ' \
-                              '-o temp.telo.info'
-    subprocess.run(cmd_telomere_identified, shell=True, close_fds=True)
+    from telomere_fun import func_telomere_info
+
+    func_telomere_info(genome_fasta, 150000, 100, "temp.telo.info", telomere_script)
     return None
 
 
@@ -171,29 +194,21 @@ def genome_split_chr_by_gap(genome_fasta, gap_size=None):
     - gap_size: 指定多少个连续 N 才算一个 gap；如果不指定，则认为任意连续 N 都是 gap。
     '''
 
-    def split_sequence_by_gap(sequence, gap_size=None):
-        """ 根据连续N的数量切割序列 """
-        if gap_size is None:
-            # 匹配任意 >=1 个连续N
-            pattern = r"[Nn]+"
-        else:
-            # 匹配大于等于 gap_size 个连续N
-            pattern = r"[Nn]{" + str(gap_size) + ",}"
-        return [contig for contig in re.split(pattern, sequence) if len(contig) > 0]
+    if gap_size is not None and gap_size <= 0:
+        raise ValueError("gap_size must be greater than 0")
 
-    def write_fasta(output_file, contigs, seq_id):
-        for i, contig in enumerate(contigs, 1):
-            output_file.write(f">{seq_id}_contig{i}\n")
-            for j in range(0, len(contig), 60):
-                output_file.write(contig[j:j + 60] + "\n")
-
-    def process_fasta(input_fasta, output_fasta, gap_size=None):
-        sequences = fasta_read(input_fasta)
-        with open(output_fasta, "w") as output_file:
-            for seq_id, sequence in sequences.items():
-                contigs = split_sequence_by_gap(sequence, gap_size)
-                write_fasta(output_file, contigs, seq_id)
+    if gap_size is None:
+        pattern = r"[Nn]+"
+    else:
+        pattern = r"[Nn]{" + str(gap_size) + ",}"
 
     base, ext = os.path.splitext(genome_fasta)
     output_fasta = base + ".contig.fa"
-    process_fasta(genome_fasta, output_fasta, gap_size)
+    with open(output_fasta, "w") as output_file:
+        for seq_id, sequence in iter_fasta_records(genome_fasta):
+            contig_index = 1
+            for contig in re.split(pattern, sequence):
+                if not contig:
+                    continue
+                write_fasta_record(output_file, f"{seq_id}_contig{contig_index}", contig, line_width=60)
+                contig_index += 1

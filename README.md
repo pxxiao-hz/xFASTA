@@ -24,10 +24,12 @@ You can view the help documentation for each subcommand by running:
 xFASTA <subcommand> -h
 ```
 ## Release notes
+### v2.0.0
+* Major refactor of the CLI, FASTA/FASTQ streaming paths, validation, and packaging.
+* This refactor may still contain bugs or behavior changes. Please use carefully and open an issue if you find a problem.
 ### v1.0.2
 * Add some features, such as telomere identification, genome survey, etc.
 ### v1.0.1
 * Add extract read sequence based read ID.
 ### v1.0.0
 * The first version.
-
